@@ -23,6 +23,7 @@ button:disabled{opacity:.5}.step{width:40px;height:40px;padding:0;font-size:22px
 .num{font-size:22px;font-weight:700;min-width:64px;text-align:center}
 input[type=text],input[type=password]{width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin-top:8px}
 .row input{margin:0;flex:1;min-width:0}
+select{width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin-top:8px}
 .seg{display:flex;gap:6px}.seg button{flex:1;font-size:14px;padding:8px 6px}.seg button.on{background:var(--ac);color:#fff}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .chip{background:var(--ac2);color:var(--ac);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600}
@@ -52,7 +53,8 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 <section class="card"><h2>AI設定</h2>
 <div class="seg" id="seg"><button data-p="gemini">Gemini（無料枠あり）</button><button data-p="claude">Claude（API課金）</button></div>
 <input type="password" id="key" placeholder="APIキーを貼り付け" autocomplete="off" autocapitalize="off">
-<input type="text" id="model" placeholder="モデル名" autocapitalize="off" autocorrect="off">
+<select id="model"></select>
+<button id="test" style="margin-top:8px;width:100%">接続テスト（使えるモデルを取得）</button>
 <p class="hint" id="khint"></p></section>
 
 <button class="main" id="go">レシピと買い物リストを作る</button>
@@ -63,9 +65,10 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 <script>
 const $=s=>document.querySelector(s);
 const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
-const DEF={people:2,dishes:[],plan:null,checked:{},provider:'gemini',keys:{gemini:'',claude:''},models:{gemini:'gemini-2.5-flash-lite',claude:'claude-haiku-5-5'},history:[]};
+const DEF={people:2,dishes:[],plan:null,checked:{},provider:'gemini',keys:{gemini:'',claude:''},models:{gemini:'auto',claude:'auto'},lists:{gemini:[],claude:[]},history:[]};
 let S=JSON.parse(JSON.stringify(DEF));
 try{const s=JSON.parse(localStorage.getItem('kondate2')||'null');if(s)S=Object.assign(S,s)}catch(e){}
+if(!S.v3){S.models={gemini:'auto',claude:'auto'};S.lists={gemini:[],claude:[]};S.v3=true}
 const save=()=>{try{localStorage.setItem('kondate2',JSON.stringify(S))}catch(e){}};
 const HINT={gemini:'Google AI Studio（aistudio.google.com）で無料のAPIキーを作れます。無料枠には回数制限があります。',claude:'console.anthropic.com で作成。API利用は従量課金で、Claudeの月額プランとは別です。'};
 
@@ -77,7 +80,7 @@ function renderInput(){
   const q=$('#quick');q.textContent='';
   ['カレー','肉じゃが','親子丼','餃子','味噌汁'].filter(x=>!S.dishes.includes(x)).forEach(x=>{const c=h('span','chip q','+ '+x);c.onclick=()=>{S.dishes.push(x);save();renderInput()};q.append(c)});
   document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.p===S.provider));
-  $('#key').value=S.keys[S.provider]||'';$('#model').value=S.models[S.provider]||'';$('#khint').textContent=HINT[S.provider];
+  $('#key').value=S.keys[S.provider]||'';renderModels();$('#khint').textContent=HINT[S.provider];
 }
 function addDish(){const v=$('#dish').value.trim();if(v&&S.dishes.length<8){S.dishes.push(v);$('#dish').value='';save();renderInput()}}
 $('#add').onclick=addDish;$('#dish').onkeydown=e=>{if(e.key==='Enter')addDish()};
@@ -85,12 +88,12 @@ $('#minus').onclick=()=>{S.people=Math.max(1,S.people-1);save();renderInput()};
 $('#plus').onclick=()=>{S.people=Math.min(12,S.people+1);save();renderInput()};
 document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{S.provider=b.dataset.p;save();renderInput()});
 $('#key').oninput=e=>{S.keys[S.provider]=e.target.value.trim();save()};
-$('#model').oninput=e=>{S.models[S.provider]=e.target.value.trim();save()};
+$('#model').onchange=e=>{S.models[S.provider]=e.target.value;save()};
 
 function renderOut(){
   const o=$('#out');o.textContent='';const plan=S.plan;
   if(!plan||!Array.isArray(plan.dishes))return;
-  const rc=h('section','card');rc.append(h('h2',null,'📖 レシピ（'+(plan.people||S.people)+'人分）'));
+  const rc=h('section','card');rc.append(h('h2',null,'📖 レシピ（'+(plan.people||S.people)+'人分）'));if(plan.model)rc.append(h('div','hint','使用モデル：'+plan.model));
   plan.dishes.forEach((d,i)=>{
     const dt=h('details');if(i===0)dt.open=true;
     const s=h('summary',null,d.name||'料理');if(d.minutes)s.append(h('small',null,'約'+d.minutes+'分'));dt.append(s);
@@ -132,35 +135,97 @@ $('#clr').onclick=()=>{S.history=[];save();renderHist()};
 
 const SHAPE='JSONのみ出力（説明文やコードブロックは不要）：{"dishes":[{"name":"料理名","minutes":30,"tip":"おいしく作るコツ1文","steps":["手順"],"ingredients":[{"name":"食材","amount":"2個","category":"野菜|肉・魚|卵・乳製品|豆腐・加工品|主食・乾物|調味料|その他","staple":false}]}]}。staple は醤油・塩・砂糖・油・みりん等の常備調味料のときtrue。同じ食材は同じ名前で統一。';
 const buildPrompt=()=>'あなたは家庭料理に詳しい料理研究家です。'+S.people+'人分の夕食について、'+(S.dishes.length?'次の献立のレシピ：'+S.dishes.join('、'):'献立が未定なので、主菜・副菜・汁物の3品を提案（栄養バランスと作りやすさ重視）')+'。おいしく失敗しにくいレシピで、手順は各4〜6個で簡潔に。分量は'+S.people+'人分で、買い物しやすい単位（個・本・g・パック等）で。'+SHAPE;
-async function callGemini(p){
-  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(S.models.gemini)+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':S.keys.gemini},body:JSON.stringify({contents:[{parts:[{text:p}]}],generationConfig:{responseMimeType:'application/json'}})});
-  if(!r.ok)throw new Error('Gemini '+r.status);
+class ApiErr extends Error{constructor(s,d){super(s+' '+d);this.status=s;this.detail=d}}
+async function fail(r){let d='';try{const j=await r.json();d=(j.error&&j.error.message)||''}catch(e){}throw new ApiErr(r.status,d.slice(0,160))}
+const gHead=()=>({'x-goog-api-key':S.keys.gemini});
+const cHead=()=>({'x-api-key':S.keys.claude,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'});
+
+function renderModels(){
+  const sel=$('#model');sel.textContent='';
+  const o=document.createElement('option');o.value='auto';o.textContent='自動（おすすめ）';sel.append(o);
+  (S.lists[S.provider]||[]).forEach(m=>{const e=document.createElement('option');e.value=m.id;e.textContent=m.label+'（'+m.id+'）';sel.append(e)});
+  sel.value=S.models[S.provider];if(sel.value!==S.models[S.provider]){sel.value='auto';S.models[S.provider]='auto'}
+}
+async function listGemini(){
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:gHead()});
+  if(!r.ok)await fail(r);
+  const j=await r.json();
+  return(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')&&/^models\/gemini-/.test(m.name)&&!/image|tts|embedding|live|audio|robotics|computer-use|vision|exp/.test(m.name))
+    .map(m=>({id:m.name.replace('models/',''),label:m.displayName||m.name.replace('models/','')}));
+}
+async function listClaude(){
+  const r=await fetch('https://api.anthropic.com/v1/models?limit=100',{headers:cHead()});
+  if(!r.ok)await fail(r);
+  const j=await r.json();
+  return(j.data||[]).map(m=>({id:m.id,label:m.display_name||m.id}));
+}
+function rankGemini(list){
+  const sc=id=>{const v=parseFloat((id.match(/gemini-(\d+(?:\.\d+)?)/)||[0,0])[1]);const f=/flash-lite/.test(id)?1:/flash/.test(id)?2:0;return(/preview/.test(id)?0:1)*1000+v*10+f};
+  return list.map(m=>m.id).filter(id=>/flash/.test(id)).sort((a,b)=>sc(b)-sc(a));
+}
+function rankClaude(list){
+  const sc=id=>/haiku/.test(id)?3:/sonnet/.test(id)?2:/opus/.test(id)?1:0;
+  return list.map(m=>m.id).sort((a,b)=>sc(b)-sc(a)||(a<b?1:-1));
+}
+async function callGemini(p,model){
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},gHead()),body:JSON.stringify({contents:[{parts:[{text:p}]}],generationConfig:{responseMimeType:'application/json'}})});
+  if(!r.ok)await fail(r);
   const j=await r.json();return j.candidates?.[0]?.content?.parts?.[0]?.text||'';
 }
-async function callClaude(p){
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':S.keys.claude,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:S.models.claude,max_tokens:3000,messages:[{role:'user',content:p}]})});
-  if(!r.ok)throw new Error('Claude '+r.status);
+async function callClaude(p,model){
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:Object.assign({'content-type':'application/json'},cHead()),body:JSON.stringify({model:model,max_tokens:3000,messages:[{role:'user',content:p}]})});
+  if(!r.ok)await fail(r);
   const j=await r.json();return(j.content||[]).map(c=>c.text||'').join('');
 }
 function parse(t){const a=t.indexOf('{'),b=t.lastIndexOf('}');const o=JSON.parse(t.slice(a,b+1));if(!Array.isArray(o.dishes)||!o.dishes.length)throw new Error('empty');return o}
-
+async function candidates(){
+  const p=S.provider,sel=S.models[p];
+  if(sel!=='auto')return[sel];
+  let list=S.lists[p];
+  if(!list.length){list=await(p==='gemini'?listGemini:listClaude)();S.lists[p]=list;save();renderModels()}
+  return(p==='gemini'?rankGemini(list):rankClaude(list)).slice(0,4);
+}
+function showErr(e){
+  const err=$('#err'),s=e&&e.status,d=e&&e.detail?'（'+e.detail+'）':'',m=String((e&&e.message)||e);
+  err.textContent=s===400||s===401||s===403?'APIキーが正しくないか、使えない状態です'+d
+    :s===404?'モデルが見つかりません。モデルを「自動」にしてください'+d
+    :s===429?'無料枠の上限に達したようです。少し待ってからお試しください'+d
+    :m.includes('Failed to fetch')?'通信できませんでした。ネットワークを確認してください。'
+    :'うまく作れませんでした：'+m;
+  err.hidden=false;
+}
 async function generate(){
   const err=$('#err'),btn=$('#go');err.hidden=true;
   if(!S.keys[S.provider]){err.textContent='AI設定にAPIキーを貼り付けてください。';err.hidden=false;return}
   btn.disabled=true;btn.textContent='レシピを考え中…';
   try{
-    const t=await(S.provider==='gemini'?callGemini:callClaude)(buildPrompt());
-    const plan=parse(t);plan.people=S.people;
+    const ids=await candidates();
+    if(!ids.length)throw new Error('使えるモデルが見つかりませんでした。');
+    const call=S.provider==='gemini'?callGemini:callClaude;
+    let text='',used='',last;
+    for(const id of ids){
+      try{text=await call(buildPrompt(),id);used=id;break}
+      catch(e){last=e;if(![404,429,500,503].includes(e.status))throw e}
+    }
+    if(!used)throw last;
+    const plan=parse(text);plan.people=S.people;plan.model=used;
     S.plan=plan;S.checked={};
     S.history.unshift({t:Date.now(),people:S.people,plan:{dishes:plan.dishes}});S.history=S.history.slice(0,10);
     save();renderOut();renderHist();$('#out').scrollIntoView({behavior:'smooth'});
-  }catch(e){
-    const m=String(e.message||e);
-    err.textContent=/ (400|401|403)$/.test(m)?'APIキーまたはモデル名が正しくないようです（'+m+'）。':/ 429$/.test(m)?'無料枠の上限に達したようです。少し待つか、別のAIを選んでください。':m.includes('Failed to fetch')?'通信できませんでした。ネットワークを確認してください。':'うまく作れませんでした。もう一度お試しください。（'+m+'）';
-    err.hidden=false;
-  }
+  }catch(e){showErr(e)}
   btn.disabled=false;btn.textContent='レシピと買い物リストを作る';
 }
+$('#test').onclick=async()=>{
+  const err=$('#err'),b=$('#test');err.hidden=true;
+  if(!S.keys[S.provider]){err.textContent='先にAPIキーを貼り付けてください。';err.hidden=false;return}
+  b.disabled=true;b.textContent='確認中…';
+  try{
+    const list=await(S.provider==='gemini'?listGemini:listClaude)();
+    S.lists[S.provider]=list;save();renderModels();
+    b.textContent='✓ キーは有効です（モデル'+list.length+'件を取得）';
+  }catch(e){b.textContent='接続テスト（使えるモデルを取得）';showErr(e)}
+  b.disabled=false;
+};
 $('#go').onclick=generate;
 renderInput();renderOut();renderHist();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});

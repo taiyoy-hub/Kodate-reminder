@@ -33,6 +33,9 @@ input[type=date]{width:100%;font:inherit;padding:10px 12px;min-height:44px;borde
 .cd{padding:4px 0;min-height:50px;display:flex;flex-direction:column;align-items:center;gap:2px;background:transparent;color:var(--tx);border:1px solid var(--bd);font-weight:400;border-radius:10px;font-size:14px}
 .cd small{font-size:10px;line-height:1.1}.cd.on{background:var(--ac2);border-color:var(--ac)}.cd.today{font-weight:700;color:var(--ac)}
 label.dn{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)}label.dn input{width:22px;height:22px;accent-color:var(--ac)}
+.chip.on,.chip.q.on{background:var(--ac);color:#fff;border:1px solid var(--ac)}
+.cand{display:block;width:100%;text-align:left;border:1px solid var(--bd);background:var(--card);color:var(--tx);font-weight:400;border-radius:12px;padding:8px 12px;margin-top:6px}
+.cand.on{border-color:var(--ac);background:var(--ac2)}.cand b{font-weight:700}.cand small{display:block;color:var(--sub);font-size:12px}
 textarea{width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);resize:vertical}
 .bk{padding:10px 0;border-bottom:1px solid var(--bd)}a{color:var(--ac)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
@@ -57,7 +60,17 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 <div class="top"><h1>🍳 こんだてメモ</h1><div class="sp"></div><button class="gear" id="gear" aria-label="設定">⚙️</button></div>
 <p class="sub">献立と人数を入れるだけ。レシピと買い物リストを自動で作ります。</p>
 
-<section class="card"><h2>いつの食事？</h2>
+<section class="card"><h2>🗓 献立をまとめて提案（最大1週間）</h2>
+<div class="row"><input type="date" id="pdate"><select id="pdays" style="margin:0;width:auto"></select></div>
+<div class="chips" id="pmeals"></div>
+<p class="hint" style="margin-top:12px">今日の気分（複数選べます）</p>
+<div class="chips" id="pmoods" style="margin-top:6px"></div>
+<input type="text" id="pfree" placeholder="ほかの希望（例：魚が食べたい、豆腐が余っている）">
+<button class="main" id="pgo" style="margin-top:12px">候補を出す</button>
+<p class="err" id="perr" hidden></p></section>
+<div id="cands"></div>
+
+<section class="card"><h2>1食だけすぐ作る：いつの食事？</h2>
 <div class="seg" id="mealseg"><button data-m="breakfast">🌅 朝食</button><button data-m="lunch">☀️ 昼食</button><button data-m="dinner">🌙 夕食</button></div>
 <input type="date" id="sdate"></section>
 
@@ -70,7 +83,6 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 <p class="hint" id="hint"></p></section>
 
 <button class="main" id="go">レシピと買い物リストを作る</button>
-<button id="goday" style="width:100%;margin-top:8px">この日の朝・昼・夕をまとめて提案</button>
 <p class="err" id="err" hidden></p>
 <section class="card" style="margin-top:14px"><h2>📥 レシピを取り込む</h2>
 <textarea id="imp" rows="3" placeholder="CookpadなどのレシピのURL、または材料・手順をコピーして貼り付け"></textarea>
@@ -93,13 +105,20 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
     <p class="hint" id="st"></p>
     <p class="err" id="serr" hidden></p>
   </section>
+  <section class="card"><h2>バックアップ</h2>
+    <p class="hint" style="margin-top:0">献立の記録・レシピ帳などをテキストでコピーして保管できます（キーは含まれません）。端末のデータが消えたときは、ここから復元できます。</p>
+    <button id="bkcopy" style="width:100%">記録をコピー</button>
+    <textarea id="bkin" rows="2" placeholder="コピーした記録をここに貼り付けて復元" style="margin-top:8px"></textarea>
+    <button id="bkrest" style="margin-top:8px;width:100%">貼り付けた記録から復元</button>
+    <p class="hint" id="bkmsg"></p>
+  </section>
 </div>
 
 <script>
 const $=s=>document.querySelector(s);
 const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const STAPLE='常備品（家にあるか確認）',MANUAL='自分で追加';
-const DEF={people:2,dishes:[],plan:null,key:'',model:'auto',list:[],shop:[],book:[],log:[],used:'',history:[],v4:true,v5:false,v6:false};
+const DEF={people:2,dishes:[],plan:null,key:'',model:'auto',list:[],shop:[],book:[],log:[],opt:{days:1,meals:['dinner'],moods:[],free:''},cands:null,used:'',history:[],v4:true,v5:false,v6:false};
 let S=JSON.parse(JSON.stringify(DEF)),editId=null,focusAdd=false,uid=0;
 const nid=()=>Date.now().toString(36)+(uid++);
 const save=()=>{try{localStorage.setItem('kondate2',JSON.stringify(S))}catch(e){}};
@@ -114,7 +133,7 @@ function shopFrom(plan,checked){
   return[...m.values()].map(v=>({id:nid(),name:v.name,amt:v.amt.filter(Boolean).join(' + '),cat:v.cat,done:v.done,manual:false}));
 }
 function applyPlan(plan,mode){
-  if(mode!=='keep')plan.dishes.forEach(d=>{d.date=slot.date;d.meal=(mode==='day'&&MEALS[d.meal])?d.meal:slot.meal});
+  if(mode==='one'||mode==='day')plan.dishes.forEach(d=>{d.date=slot.date;d.meal=(mode==='day'&&MEALS[d.meal])?d.meal:slot.meal});
   S.plan=plan;S.shop=S.shop.filter(i=>i.manual).concat(shopFrom(plan));
   if(mode!=='keep')logPlan(plan);
 }
@@ -162,8 +181,8 @@ function renderRecipes(){
   if(!plan||!Array.isArray(plan.dishes))return;
   const rc=h('section','card');rc.append(h('h2',null,'📖 レシピ（'+(plan.people||S.people)+'人分）'));
   let prevM;
-  [...plan.dishes].sort((a,b)=>ORDER.indexOf(a.meal)-ORDER.indexOf(b.meal)).forEach((d,i)=>{
-    if(d.meal&&MEALS[d.meal]&&d.meal!==prevM){prevM=d.meal;rc.append(h('div','cat',MEALS[d.meal].e+' '+MEALS[d.meal].n+(d.date?'（'+d.date.slice(5).replace('-','/')+'）':'')))}
+  [...plan.dishes].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||ORDER.indexOf(a.meal)-ORDER.indexOf(b.meal)).forEach((d,i)=>{
+    if(d.meal&&MEALS[d.meal]&&(d.date||'')+d.meal!==prevM){prevM=(d.date||'')+d.meal;rc.append(h('div','cat',MEALS[d.meal].e+' '+MEALS[d.meal].n+(d.date?'　'+md(d.date):'')))}
     const dt=h('details');if(i===0)dt.open=true;
     const s=h('summary',null,d.name||'料理');if(d.minutes)s.append(h('small',null,'約'+d.minutes+'分'));dt.append(s);
     if(d.tip)dt.append(h('div','tip','💡 '+d.tip));
@@ -280,7 +299,7 @@ function buildPrompt(mode){
   const ppl=S.people+'人分',av=recentNames(),avoid=av.length?'過去に作った次の料理は避け、被らないようにしてください：'+av.join('、')+'。':'',mo=(new Date(slot.date).getMonth()+1)||(new Date().getMonth()+1);
   let ask;
   if(mode==='day')ask=ppl+'で、'+slot.date+'の朝食・昼食・夕食をまとめて提案してください。朝食は'+MEALS.breakfast.g+'、昼食は'+MEALS.lunch.g+'、夕食は'+MEALS.dinner.g+'。各料理のmealに breakfast/lunch/dinner のいずれかを入れる。'+avoid;
-  else{const M=MEALS[slot.meal];ask=ppl+'の'+M.n+'について、'+(S.dishes.length?'次の献立のレシピ：'+S.dishes.join('、')+'。':'献立が未定なので、'+M.g+'を提案してください。'+avoid)+'各料理のmealは '+slot.meal+' にする。'}
+  else{const M=MEALS[slot.meal];ask=ppl+'の'+M.n+'について、'+(S.dishes.length?'次の献立のレシピ：'+S.dishes.join('、')+'。':'献立が未定なので、'+M.g+'を提案してください。'+avoid+moodText())+'各料理のmealは '+slot.meal+' にする。'}
   return 'あなたは家庭料理に詳しい料理研究家です。'+ask+mo+'月の旬の食材も取り入れ、おいしく失敗しにくいレシピで、手順は各4〜6個で簡潔に。分量は'+S.people+'人分で、買い物しやすい単位（個・本・g・パック等）で。'+SHAPE;
 }
 function showErr(e,el){
@@ -312,7 +331,7 @@ async function generate(mode){
   }catch(e){showErr(e,err)}
   btn.disabled=false;btn.textContent=label;
 }
-$('#go').onclick=()=>generate('one');$('#goday').onclick=()=>generate('day');
+$('#go').onclick=()=>generate('one');
 
 /* ---------- 食事の日時・カレンダー ---------- */
 const today=()=>ymd(new Date());
@@ -381,7 +400,7 @@ function renderCal(){
   cam.onclick=()=>{photoCtx={date:calSel,meal:addMeal};$('#photo').click()};
   f.append(sel,n,add,cam);det.append(f);
   const b=h('button','ib','この日の食事を提案する');b.style.marginTop='10px';
-  b.onclick=()=>{slot.date=calSel;renderSlot();window.scrollTo({top:0,behavior:'smooth'})};det.append(b);el.append(det);
+  b.onclick=()=>{slot.date=calSel;pstart=calSel;renderSlot();renderProp();window.scrollTo({top:0,behavior:'smooth'})};det.append(b);el.append(det);
 }
 function readPhoto(file){return new Promise((res,rej)=>{
   const img=new Image(),u=URL.createObjectURL(file);
@@ -510,6 +529,120 @@ $('#test').onclick=async()=>{
 };
 $('#key').value=S.key;
 
-renderSlot();renderCal();renderInput();renderRecipes();renderShop();renderHist();
+/* ---------- 献立の提案（候補→組み合わせ） ---------- */
+const MOODS=['和食','洋食','中華','エスニック','あっさり','がっつり','甘いもの','しょっぱいもの','辛いもの','ヘルシー','手軽に'];
+const addDays=(ds,n)=>{const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return ymd(d)};
+const md=ds=>{const d=new Date(ds+'T00:00:00');return(d.getMonth()+1)+'/'+d.getDate()+'('+'日月火水木金土'[d.getDay()]+')'};
+const moodText=()=>{const m=S.opt.moods.concat(S.opt.free?[S.opt.free]:[]);return m.length?'今日の気分・希望：'+m.join('、')+'。これを重視してください。':''};
+let pstart=today();
+function renderProp(){
+  $('#pdate').value=pstart;
+  const ds=$('#pdays');
+  if(!ds.options.length)for(let i=1;i<=7;i++){const o=document.createElement('option');o.value=i;o.textContent=i===7?'7日間（1週間）':i+'日間';ds.append(o)}
+  ds.value=S.opt.days;
+  const pm=$('#pmeals');pm.textContent='';
+  ORDER.forEach(m=>{
+    const c=h('span','chip'+(S.opt.meals.includes(m)?' on':''),MEALS[m].e+' '+MEALS[m].n);
+    c.onclick=()=>{S.opt.meals=S.opt.meals.includes(m)?S.opt.meals.filter(x=>x!==m):S.opt.meals.concat(m);save();renderProp()};pm.append(c);
+  });
+  const mo=$('#pmoods');mo.textContent='';
+  MOODS.forEach(x=>{
+    const c=h('span','chip q'+(S.opt.moods.includes(x)?' on':''),x);
+    c.onclick=()=>{S.opt.moods=S.opt.moods.includes(x)?S.opt.moods.filter(v=>v!==x):S.opt.moods.concat(x);save();renderProp()};mo.append(c);
+  });
+  $('#pfree').value=S.opt.free;
+}
+$('#pdate').onchange=e=>{if(e.target.value)pstart=e.target.value};
+$('#pdays').onchange=e=>{S.opt.days=+e.target.value;save()};
+$('#pfree').oninput=e=>{S.opt.free=e.target.value;save()};
+
+async function ask(prompt){
+  const ids=await candidates();let last;
+  for(const id of ids){
+    try{const t=await callGemini(prompt,id);S.used=id;return t}
+    catch(e){last=e;if(![404,429,500,503].includes(e.status))throw e}
+  }
+  throw last;
+}
+async function proposeCands(){
+  const err=$('#perr'),btn=$('#pgo'),label=btn.textContent;err.hidden=true;
+  const meals=ORDER.filter(m=>S.opt.meals.includes(m));
+  if(!meals.length){err.textContent='朝食・昼食・夕食のどれかを選んでください。';err.hidden=false;return}
+  if(!S.key){openSheet('候補の作成には、最初に一度だけキーの設定が必要です。');return}
+  const slots=[];
+  for(let i=0;i<S.opt.days;i++)meals.forEach(m=>slots.push({date:addDays(pstart,i),meal:m}));
+  btn.disabled=true;btn.textContent='候補を考え中…';
+  try{
+    const av=recentNames(),mood=moodText();
+    const p='あなたは家庭料理に詳しい料理研究家です。'+S.people+'人分の献立づくりのため、次の各食事枠について、料理の候補を挙げてください。\n枠：\n'+slots.map(x=>x.date+' '+x.meal).join('\n')+'\n'
+      +(mood?mood+'\n':'')
+      +'条件：朝食は手早く（15分程度）作れる軽めのもの、昼食は一品で満足できるもの、夕食は主菜・副菜・汁物などを組み合わせられる候補。各枠の候補数は朝食4・昼食5・夕食6。種類(kind)は 主食/主菜/副菜/汁物/デザート から選び、候補の種類を混ぜる。気分に合う料理を中心にしつつ、全体が偏りすぎないようにする。同じ料理や同じ主材料が続きすぎないようにし、同じ料理を複数の枠に出さない。'
+      +(av.length?'過去に作った次の料理は避ける：'+av.join('、')+'。':'')
+      +(new Date(slots[0].date+'T00:00:00').getMonth()+1)+'月の旬の食材も取り入れる。\nJSONのみ出力：{"slots":[{"date":"'+slots[0].date+'","meal":"'+slots[0].meal+'","items":[{"name":"料理名","kind":"主菜","desc":"一言（20字以内）"}]}]}';
+    const o=JSON.parse((t=>t.slice(t.indexOf('{'),t.lastIndexOf('}')+1))(await ask(p))),raw=o.slots||[];
+    const out=slots.map((sl,i)=>{
+      const r=raw.find(x=>x.date===sl.date&&x.meal===sl.meal)||(raw.length===slots.length?raw[i]:null);
+      const items=((r&&r.items)||[]).map(it=>({name:String(it.name||'').trim(),kind:it.kind||'',desc:it.desc||'',sel:false})).filter(it=>it.name).slice(0,8);
+      return{date:sl.date,meal:sl.meal,items};
+    }).filter(sl=>sl.items.length);
+    if(!out.length)throw new Error('候補を読み取れませんでした。');
+    S.cands={slots:out};save();renderCands();$('#cands').scrollIntoView({behavior:'smooth'});
+  }catch(e){showErr(e,err)}
+  btn.disabled=false;btn.textContent=label;
+}
+$('#pgo').onclick=proposeCands;
+
+function renderCands(){
+  const o=$('#cands');o.textContent='';const C=S.cands;
+  if(!C||!C.slots||!C.slots.length)return;
+  const card=h('section','card'),hd=h('div','row'),clr=h('button','ib','消す');
+  clr.onclick=()=>{S.cands=null;save();renderCands()};
+  hd.append(h('h2',null,'🍽 候補から選ぶ'),h('div','sp'),clr);card.append(hd);
+  card.append(h('p','hint','気になる料理をタップして選びます（複数OK）。選んだ料理で、レシピと買い物リストを作ります。'));
+  C.slots.forEach(sl=>{
+    card.append(h('div','cat',md(sl.date)+'　'+MEALS[sl.meal].e+' '+MEALS[sl.meal].n));
+    sl.items.forEach(it=>{
+      const b=h('button','cand'+(it.sel?' on':''));
+      b.append(h('b',null,(it.sel?'✓ ':'')+it.name),h('small',null,[it.kind,it.desc].filter(Boolean).join('・')));
+      b.onclick=()=>{it.sel=!it.sel;save();renderCands()};card.append(b);
+    });
+  });
+  const n=C.slots.reduce((a,sl)=>a+sl.items.filter(i=>i.sel).length,0);
+  const go=h('button','main','選んだ'+n+'品のレシピと買い物リストを作る');go.disabled=!n;go.style.marginTop='14px';
+  go.onclick=()=>makeFromSel(go);card.append(go);o.append(card);
+}
+async function makeFromSel(btn){
+  const err=$('#perr');err.hidden=true;
+  const sel=[];(S.cands?S.cands.slots:[]).forEach(sl=>sl.items.forEach(it=>{if(it.sel)sel.push({date:sl.date,meal:sl.meal,name:it.name})}));
+  if(!sel.length)return;
+  if(sel.length>20){err.textContent='一度に作れるのは20品までです。選びすぎた分を外してください。';err.hidden=false;return}
+  if(!S.key){openSheet('レシピの作成には、最初に一度だけキーの設定が必要です。');return}
+  const label=btn.textContent;btn.disabled=true;btn.textContent='レシピを考え中…';
+  try{
+    const list=sel.map((x,i)=>(i+1)+'. '+x.name+'（'+MEALS[x.meal].n+'）').join('\n');
+    const p='あなたは家庭料理に詳しい料理研究家です。次の料理のレシピを、番号の順番どおり、料理名もそのままで作ってください。\n'+list+'\nおいしく失敗しにくいレシピで、手順は各4〜6個で簡潔に。分量は'+S.people+'人分で、買い物しやすい単位（個・本・g・パック等）で。'+SHAPE;
+    const plan=parse(await ask(p));
+    plan.dishes.forEach((d,i)=>{const x=plan.dishes.length===sel.length?sel[i]:(sel.find(y=>y.name===d.name)||sel[0]);d.date=x.date;d.meal=x.meal});
+    plan.people=S.people;applyPlan(plan,'sel');
+    S.history.unshift({t:Date.now(),people:S.people,plan:{dishes:plan.dishes}});S.history=S.history.slice(0,10);
+    save();renderRecipes();renderShop();renderHist();renderCal();$('#rec').scrollIntoView({behavior:'smooth'});
+  }catch(e){showErr(e,err)}
+  btn.disabled=false;btn.textContent=label;
+}
+
+/* ---------- バックアップ ---------- */
+$('#bkcopy').onclick=async()=>{
+  const o=Object.assign({},S);delete o.key;delete o.list;
+  try{await navigator.clipboard.writeText(JSON.stringify(o));$('#bkmsg').textContent='コピーしました。メモアプリなどに貼り付けて保管してください。'}
+  catch(e){$('#bkmsg').textContent='コピーできませんでした。'}
+};
+$('#bkrest').onclick=()=>{
+  try{
+    const o=JSON.parse($('#bkin').value);if(!o||!Array.isArray(o.log))throw new Error('x');
+    const k=S.key,l=S.list;S=Object.assign(JSON.parse(JSON.stringify(DEF)),o,{key:k,list:l});save();location.reload();
+  }catch(e){$('#bkmsg').textContent='復元できませんでした。コピーした記録をそのまま貼り付けてください。'}
+};
+
+renderProp();renderCands();renderSlot();renderCal();renderInput();renderRecipes();renderShop();renderHist();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>

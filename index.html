@@ -26,6 +26,15 @@ button:disabled{opacity:.5}.step{width:40px;height:40px;padding:0;font-size:22px
 .num{font-size:22px;font-weight:700;min-width:64px;text-align:center}
 input[type=text],input[type=password],select{width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin-top:8px}
 .row input{margin:0;flex:1;min-width:0}
+input[type=date]{width:100%;font:inherit;padding:10px 12px;min-height:44px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin-top:8px}
+.seg{display:flex;gap:6px}.seg button{flex:1;font-size:14px;padding:8px 4px}.seg button.on{background:var(--ac);color:#fff}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px}
+.cw{text-align:center;font-size:12px;color:var(--sub)}
+.cd{padding:4px 0;min-height:50px;display:flex;flex-direction:column;align-items:center;gap:2px;background:transparent;color:var(--tx);border:1px solid var(--bd);font-weight:400;border-radius:10px;font-size:14px}
+.cd small{font-size:10px;line-height:1.1}.cd.on{background:var(--ac2);border-color:var(--ac)}.cd.today{font-weight:700;color:var(--ac)}
+label.dn{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)}label.dn input{width:22px;height:22px;accent-color:var(--ac)}
+textarea{width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);resize:vertical}
+.bk{padding:10px 0;border-bottom:1px solid var(--bd)}a{color:var(--ac)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .chip{background:var(--ac2);color:var(--ac);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600}
 .chip.q{background:transparent;border:1px dashed var(--bd);color:var(--sub);font-weight:400}
@@ -48,6 +57,10 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 <div class="top"><h1>🍳 こんだてメモ</h1><div class="sp"></div><button class="gear" id="gear" aria-label="設定">⚙️</button></div>
 <p class="sub">献立と人数を入れるだけ。レシピと買い物リストを自動で作ります。</p>
 
+<section class="card"><h2>いつの食事？</h2>
+<div class="seg" id="mealseg"><button data-m="breakfast">🌅 朝食</button><button data-m="lunch">☀️ 昼食</button><button data-m="dinner">🌙 夕食</button></div>
+<input type="date" id="sdate"></section>
+
 <section class="card"><h2>何人分？</h2>
 <div class="row"><button class="step" id="minus">−</button><div class="num" id="ppl"></div><button class="step" id="plus">＋</button></div></section>
 
@@ -57,9 +70,16 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 <p class="hint" id="hint"></p></section>
 
 <button class="main" id="go">レシピと買い物リストを作る</button>
+<button id="goday" style="width:100%;margin-top:8px">この日の朝・昼・夕をまとめて提案</button>
 <p class="err" id="err" hidden></p>
-<div id="rec" style="margin-top:14px"></div>
+<section class="card" style="margin-top:14px"><h2>📥 レシピを取り込む</h2>
+<textarea id="imp" rows="3" placeholder="CookpadなどのレシピのURL、または材料・手順をコピーして貼り付け"></textarea>
+<button id="impgo" style="margin-top:8px;width:100%">取り込んで買い物リストに追加</button>
+<p class="err" id="ierr" hidden></p><p class="hint" id="iok" hidden></p></section>
+<div id="rec"></div>
 <div id="shop"></div>
+<section class="card"><h2>📅 カレンダー</h2><div id="cal"></div><p class="hint" id="calmsg" hidden></p><input type="file" accept="image/*" id="photo" hidden></section>
+<section class="card" id="bookc" hidden><h2>📚 レシピ帳</h2><div id="book"></div></section>
 <section class="card" id="histc" hidden><div class="row"><h2>🕘 履歴</h2><div class="sp"></div><button id="clr">消す</button></div><div id="hist"></div></section>
 </main>
 
@@ -79,7 +99,7 @@ label.it input{width:22px;height:22px;accent-color:var(--ac)}label.it.on span{te
 const $=s=>document.querySelector(s);
 const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const STAPLE='常備品（家にあるか確認）',MANUAL='自分で追加';
-const DEF={people:2,dishes:[],plan:null,key:'',model:'auto',list:[],shop:[],used:'',history:[],v4:true};
+const DEF={people:2,dishes:[],plan:null,key:'',model:'auto',list:[],shop:[],book:[],log:[],used:'',history:[],v4:true,v5:false,v6:false};
 let S=JSON.parse(JSON.stringify(DEF)),editId=null,focusAdd=false,uid=0;
 const nid=()=>Date.now().toString(36)+(uid++);
 const save=()=>{try{localStorage.setItem('kondate2',JSON.stringify(S))}catch(e){}};
@@ -93,7 +113,11 @@ function shopFrom(plan,checked){
   }));
   return[...m.values()].map(v=>({id:nid(),name:v.name,amt:v.amt.filter(Boolean).join(' + '),cat:v.cat,done:v.done,manual:false}));
 }
-function applyPlan(plan){S.plan=plan;S.shop=S.shop.filter(i=>i.manual).concat(shopFrom(plan))}
+function applyPlan(plan,mode){
+  if(mode!=='keep')plan.dishes.forEach(d=>{d.date=slot.date;d.meal=(mode==='day'&&MEALS[d.meal])?d.meal:slot.meal});
+  S.plan=plan;S.shop=S.shop.filter(i=>i.manual).concat(shopFrom(plan));
+  if(mode!=='keep')logPlan(plan);
+}
 
 let old=null;try{old=JSON.parse(localStorage.getItem('kondate2')||'null')}catch(e){}
 if(old){
@@ -105,6 +129,18 @@ if(old){
   }
 }
 
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+if(!S.v5){
+  (S.history||[]).forEach(it=>{
+    const d=new Date(it.t),hr=d.getHours(),date=ymd(d),meal=hr<10?'breakfast':hr<15?'lunch':'dinner';
+    const names=it.plan.dishes.map(x=>x.name),e=S.log.find(x=>x.date===date&&x.meal===meal);
+    if(e)e.dishes=[...new Set(e.dishes.concat(names))];else S.log.push({date,meal,people:it.people,dishes:names});
+  });
+  S.v5=true;
+}
+if(!S.v6){S.log.forEach(e=>{e.dishes=e.dishes.map(x=>typeof x==='string'?{name:x,done:false,src:'ai'}:x)});S.v6=true}
+
 /* ---------- 入力 ---------- */
 function renderInput(){
   $('#ppl').textContent=S.people+'人';
@@ -113,6 +149,7 @@ function renderInput(){
   S.dishes.forEach((d,i)=>{const c=h('span','chip',d+' ×');c.onclick=()=>{S.dishes.splice(i,1);save();renderInput()};p.append(c)});
   const q=$('#quick');q.textContent='';
   ['カレー','肉じゃが','親子丼','餃子','味噌汁'].filter(x=>!S.dishes.includes(x)).forEach(x=>{const c=h('span','chip q','+ '+x);c.onclick=()=>{S.dishes.push(x);save();renderInput()};q.append(c)});
+  renderBook();
 }
 function addDish(){const v=$('#dish').value.trim();if(v&&S.dishes.length<8){S.dishes.push(v);$('#dish').value='';save();renderInput()}}
 $('#add').onclick=addDish;$('#dish').onkeydown=e=>{if(e.key==='Enter')addDish()};
@@ -124,12 +161,24 @@ function renderRecipes(){
   const o=$('#rec');o.textContent='';const plan=S.plan;
   if(!plan||!Array.isArray(plan.dishes))return;
   const rc=h('section','card');rc.append(h('h2',null,'📖 レシピ（'+(plan.people||S.people)+'人分）'));
-  plan.dishes.forEach((d,i)=>{
+  let prevM;
+  [...plan.dishes].sort((a,b)=>ORDER.indexOf(a.meal)-ORDER.indexOf(b.meal)).forEach((d,i)=>{
+    if(d.meal&&MEALS[d.meal]&&d.meal!==prevM){prevM=d.meal;rc.append(h('div','cat',MEALS[d.meal].e+' '+MEALS[d.meal].n+(d.date?'（'+d.date.slice(5).replace('-','/')+'）':'')))}
     const dt=h('details');if(i===0)dt.open=true;
     const s=h('summary',null,d.name||'料理');if(d.minutes)s.append(h('small',null,'約'+d.minutes+'分'));dt.append(s);
     if(d.tip)dt.append(h('div','tip','💡 '+d.tip));
     dt.append(h('div','ing','材料：'+(d.ingredients||[]).map(x=>x.name+' '+x.amount).join('、')));
-    const ol=h('ol');(d.steps||[]).forEach(t=>ol.append(h('li',null,t)));dt.append(ol);rc.append(dt);
+    const ol=h('ol');(d.steps||[]).forEach(t=>ol.append(h('li',null,t)));dt.append(ol);
+    if(d.date&&d.meal){
+      const lk=h('label','dn'),cb=h('input'),ent=()=>{const e=logEntry(d.date,d.meal);return e&&e.dishes.find(x=>x.name===d.name)};
+      cb.type='checkbox';cb.checked=!!(ent()&&ent().done);
+      cb.onchange=()=>{const x=ent();if(x){x.done=cb.checked;save();renderCal()}};
+      lk.append(cb,h('span',null,'作った（カレンダーに記録）'));dt.append(lk);
+    }
+    const ar=h('div','row'),sv=h('button','ib',inBook(d)?'✓ レシピ帳に保存済み':'☆ レシピ帳に保存');sv.disabled=inBook(d);
+    sv.onclick=()=>{saveBook(d,plan.people||S.people);sv.textContent='✓ 保存しました';sv.disabled=true};ar.append(sv);
+    if(d.source){const a=h('a',null,'元のレシピ ↗');a.href=d.source;a.target='_blank';a.rel='noopener';a.style.fontSize='14px';ar.append(a)}
+    dt.append(ar);rc.append(dt);
   });
   o.append(rc);
 }
@@ -186,7 +235,7 @@ function renderHist(){
   $('#histc').hidden=!S.history.length;const el=$('#hist');el.textContent='';
   S.history.forEach(it=>{
     const d=new Date(it.t),b=h('button','hist',(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+' ・ '+it.plan.dishes.map(x=>x.name).join('、')+'（'+it.people+'人）');
-    b.onclick=()=>{applyPlan(Object.assign({people:it.people},it.plan));save();renderRecipes();renderShop();window.scrollTo({top:$('#rec').offsetTop-8,behavior:'smooth'})};el.append(b);
+    b.onclick=()=>{applyPlan(Object.assign({people:it.people},it.plan),'keep');save();renderRecipes();renderShop();window.scrollTo({top:$('#rec').offsetTop-8,behavior:'smooth'})};el.append(b);
   });
 }
 $('#clr').onclick=()=>{S.history=[];save();renderHist()};
@@ -206,10 +255,16 @@ function rankModels(list){
   const sc=id=>{const v=parseFloat((id.match(/gemini-(\d+(?:\.\d+)?)/)||[0,0])[1]);const f=/flash-lite/.test(id)?1:/flash/.test(id)?2:0;return(/preview/.test(id)?0:1)*1000+v*10+f};
   return list.map(m=>m.id).filter(id=>/flash/.test(id)).sort((a,b)=>sc(b)-sc(a));
 }
-async function callGemini(p,model){
-  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},gHead()),body:JSON.stringify({contents:[{parts:[{text:p}]}],generationConfig:{responseMimeType:'application/json'}})});
+let lastMeta=null;
+async function callGemini(p,model,tools,img){
+  const parts=[{text:p}];if(img)parts.push({inline_data:{mime_type:'image/jpeg',data:img}});
+  const body={contents:[{parts}]};
+  if(tools)body.tools=tools;else body.generationConfig={responseMimeType:'application/json'};
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},gHead()),body:JSON.stringify(body)});
   if(!r.ok)await fail(r);
-  const j=await r.json();return j.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  const j=await r.json(),c=j.candidates&&j.candidates[0];
+  lastMeta=c?(c.urlContextMetadata||c.url_context_metadata||null):null;
+  return((c&&c.content&&c.content.parts)||[]).map(x=>x.text||'').join('');
 }
 function parse(t){const a=t.indexOf('{'),b=t.lastIndexOf('}');const o=JSON.parse(t.slice(a,b+1));if(!Array.isArray(o.dishes)||!o.dishes.length)throw new Error('empty');return o}
 async function candidates(){
@@ -217,8 +272,17 @@ async function candidates(){
   if(!S.list.length){S.list=await listModels();save();renderModels()}
   return rankModels(S.list).slice(0,4);
 }
-const SHAPE='JSONのみ出力（説明文やコードブロックは不要）：{"dishes":[{"name":"料理名","minutes":30,"tip":"おいしく作るコツ1文","steps":["手順"],"ingredients":[{"name":"食材","amount":"2個","category":"野菜|肉・魚|卵・乳製品|豆腐・加工品|主食・乾物|調味料|その他","staple":false}]}]}。staple は醤油・塩・砂糖・油・みりん等の常備調味料のときtrue。同じ食材は同じ名前で統一。';
-const buildPrompt=()=>'あなたは家庭料理に詳しい料理研究家です。'+S.people+'人分の夕食について、'+(S.dishes.length?'次の献立のレシピ：'+S.dishes.join('、'):'献立が未定なので、主菜・副菜・汁物の3品を提案（栄養バランスと作りやすさ重視）')+'。おいしく失敗しにくいレシピで、手順は各4〜6個で簡潔に。分量は'+S.people+'人分で、買い物しやすい単位（個・本・g・パック等）で。'+SHAPE;
+const SHAPE='JSONのみ出力（説明文やコードブロックは不要）：{"dishes":[{"meal":"breakfast|lunch|dinner","name":"料理名","minutes":30,"tip":"おいしく作るコツ1文","steps":["手順"],"ingredients":[{"name":"食材","amount":"2個","qty":2,"unit":"個","category":"野菜|肉・魚|卵・乳製品|豆腐・加工品|主食・乾物|調味料|その他","staple":false}]}]}。staple は醤油・塩・砂糖・油・みりん等の常備調味料のときtrue。同じ食材は同じ名前で統一。amountは表示用の文字列、qtyとunitは数値と単位（「少々」などはqtyをnull）。';
+const ORDER=['breakfast','lunch','dinner'];
+const MEALS={breakfast:{n:'朝食',e:'🌅',g:'朝食向きの、手早く作れて（15分程度）軽めのメニューを1〜2品'},lunch:{n:'昼食',e:'☀️',g:'昼食向きの、一品で満足できる（丼・麺・ワンプレートなど）メニューを1〜2品'},dinner:{n:'夕食',e:'🌙',g:'夕食向きの、主菜・副菜・汁物のバランスが良いメニューを3品'}};
+const recentNames=()=>[...new Set(S.log.slice().sort((a,b)=>a.date<b.date?1:-1).flatMap(e=>e.dishes.filter(x=>x.done||e.date>=today()).map(x=>x.name)))].slice(0,60);
+function buildPrompt(mode){
+  const ppl=S.people+'人分',av=recentNames(),avoid=av.length?'過去に作った次の料理は避け、被らないようにしてください：'+av.join('、')+'。':'',mo=(new Date(slot.date).getMonth()+1)||(new Date().getMonth()+1);
+  let ask;
+  if(mode==='day')ask=ppl+'で、'+slot.date+'の朝食・昼食・夕食をまとめて提案してください。朝食は'+MEALS.breakfast.g+'、昼食は'+MEALS.lunch.g+'、夕食は'+MEALS.dinner.g+'。各料理のmealに breakfast/lunch/dinner のいずれかを入れる。'+avoid;
+  else{const M=MEALS[slot.meal];ask=ppl+'の'+M.n+'について、'+(S.dishes.length?'次の献立のレシピ：'+S.dishes.join('、')+'。':'献立が未定なので、'+M.g+'を提案してください。'+avoid)+'各料理のmealは '+slot.meal+' にする。'}
+  return 'あなたは家庭料理に詳しい料理研究家です。'+ask+mo+'月の旬の食材も取り入れ、おいしく失敗しにくいレシピで、手順は各4〜6個で簡潔に。分量は'+S.people+'人分で、買い物しやすい単位（個・本・g・パック等）で。'+SHAPE;
+}
 function showErr(e,el){
   const s=e&&e.status,d=e&&e.detail?'（'+e.detail+'）':'',m=String((e&&e.message)||e);
   el.textContent=s===400||s===401||s===403?'APIキーが正しくないか、使えない状態です'+d
@@ -228,8 +292,8 @@ function showErr(e,el){
     :'うまく作れませんでした：'+m;
   el.hidden=false;
 }
-async function generate(){
-  const err=$('#err'),btn=$('#go');err.hidden=true;
+async function generate(mode){
+  const err=$('#err'),btn=$(mode==='day'?'#goday':'#go'),label=btn.textContent;err.hidden=true;
   if(!S.key){openSheet('レシピの自動作成には、最初に一度だけキーの設定が必要です。');return}
   btn.disabled=true;btn.textContent='レシピを考え中…';
   try{
@@ -237,18 +301,191 @@ async function generate(){
     if(!ids.length)throw new Error('使えるモデルが見つかりませんでした。');
     let text='',used='',last;
     for(const id of ids){
-      try{text=await callGemini(buildPrompt(),id);used=id;break}
+      try{text=await callGemini(buildPrompt(mode),id);used=id;break}
       catch(e){last=e;if(![404,429,500,503].includes(e.status))throw e}
     }
     if(!used)throw last;
     const plan=parse(text);plan.people=S.people;S.used=used;
-    applyPlan(plan);
+    applyPlan(plan,mode);
     S.history.unshift({t:Date.now(),people:S.people,plan:{dishes:plan.dishes}});S.history=S.history.slice(0,10);
-    save();renderRecipes();renderShop();renderHist();$('#rec').scrollIntoView({behavior:'smooth'});
+    save();renderRecipes();renderShop();renderHist();renderCal();$('#rec').scrollIntoView({behavior:'smooth'});
   }catch(e){showErr(e,err)}
-  btn.disabled=false;btn.textContent='レシピと買い物リストを作る';
+  btn.disabled=false;btn.textContent=label;
 }
-$('#go').onclick=generate;
+$('#go').onclick=()=>generate('one');$('#goday').onclick=()=>generate('day');
+
+/* ---------- 食事の日時・カレンダー ---------- */
+const today=()=>ymd(new Date());
+const autoMeal=()=>{const hr=new Date().getHours();return hr<10?'breakfast':hr<15?'lunch':'dinner'};
+let slot={date:today(),meal:autoMeal()},calY=new Date().getFullYear(),calM=new Date().getMonth(),calSel=today();
+function logEntry(date,meal,create){
+  let e=S.log.find(x=>x.date===date&&x.meal===meal);
+  if(!e&&create){e={date,meal,people:S.people,dishes:[]};S.log.push(e)}
+  return e;
+}
+function logAdd(date,meal,name,src,done){
+  const e=logEntry(date,meal,true);
+  if(!e.dishes.some(x=>x.name===name))e.dishes.push({name,done:!!done,src});
+}
+function logPlan(plan){
+  new Set(plan.dishes.map(d=>d.date+'|'+d.meal)).forEach(k=>{const p=k.split('|'),e=logEntry(p[0],p[1]);if(e)e.dishes=e.dishes.filter(x=>x.done||x.src!=='ai')});
+  plan.dishes.forEach(d=>logAdd(d.date,d.meal,d.name,'ai',false));
+  S.log=S.log.filter(e=>e.dishes.length).slice(-400);
+}
+function renderSlot(){
+  document.querySelectorAll('#mealseg button').forEach(b=>b.classList.toggle('on',b.dataset.m===slot.meal));
+  $('#sdate').value=slot.date;$('#go').textContent=MEALS[slot.meal].n+'のレシピと買い物リストを作る';
+}
+document.querySelectorAll('#mealseg button').forEach(b=>b.onclick=()=>{slot.meal=b.dataset.m;renderSlot()});
+$('#sdate').onchange=e=>{if(e.target.value)slot.date=e.target.value};
+let addMeal=autoMeal(),photoCtx=null;
+function renderCal(){
+  const el=$('#cal');el.textContent='';
+  const first=new Date(calY,calM,1),days=new Date(calY,calM+1,0).getDate();
+  const hd=h('div','row'),pv=h('button','ib','‹'),nx=h('button','ib','›');
+  pv.onclick=()=>{calM--;if(calM<0){calM=11;calY--}renderCal()};
+  nx.onclick=()=>{calM++;if(calM>11){calM=0;calY++}renderCal()};
+  hd.append(pv,h('div','sp'),h('b',null,calY+'年'+(calM+1)+'月'),h('div','sp'),nx);el.append(hd);
+  const g=h('div','cal');
+  ['日','月','火','水','木','金','土'].forEach(x=>g.append(h('div','cw',x)));
+  for(let i=0;i<first.getDay();i++)g.append(h('div'));
+  for(let d=1;d<=days;d++){
+    const key=calY+'-'+pad(calM+1)+'-'+pad(d),es=S.log.filter(e=>e.date===key);
+    const c=h('button','cd'+(key===calSel?' on':'')+(key===today()?' today':'')),sm=h('small');
+    ORDER.forEach(m=>{const e=es.find(x=>x.meal===m);if(!e)return;const sp=h('span',null,MEALS[m].e);if(!e.dishes.some(x=>x.done))sp.style.opacity='.35';sm.append(sp)});
+    c.append(h('span',null,String(d)),sm);
+    c.onclick=()=>{calSel=key;$('#calmsg').hidden=true;renderCal()};g.append(c);
+  }
+  el.append(g);
+  if(!calSel)return;
+  const det=h('div');det.style.marginTop='10px';det.append(h('div','cat',calSel.replace(/-/g,'/')+'（チェック＝作った）'));
+  const es=ORDER.map(m=>S.log.find(e=>e.date===calSel&&e.meal===m)).filter(Boolean);
+  if(!es.length)det.append(h('p','hint','この日の記録はありません。'));
+  es.forEach(e=>{
+    det.append(h('div','ing',MEALS[e.meal].e+' '+MEALS[e.meal].n+'（'+e.people+'人分）'));
+    e.dishes.forEach(x=>{
+      const l=h('label','dn'),cb=h('input'),del=h('button','ib','✕');
+      cb.type='checkbox';cb.checked=!!x.done;cb.onchange=()=>{x.done=cb.checked;save();renderCal()};
+      del.onclick=ev=>{ev.preventDefault();e.dishes=e.dishes.filter(v=>v!==x);S.log=S.log.filter(v=>v.dishes.length);save();renderCal()};
+      const nm=h('span',null,x.name+(x.src==='photo'?' 📷':''));if(!x.done)nm.style.color='var(--sub)';
+      l.append(cb,nm);if(!x.done)l.append(h('small','ing','予定'));l.append(h('div','sp'),del);det.append(l);
+    });
+  });
+  const f=h('div','row'),sel=document.createElement('select'),n=h('input'),add=h('button','ib','追加'),cam=h('button','ib','📷');
+  f.style.marginTop='12px';sel.style.cssText='margin:0;width:auto;flex:0 0 auto';
+  ORDER.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=MEALS[m].n;sel.append(o)});
+  sel.value=addMeal;sel.onchange=()=>{addMeal=sel.value};
+  n.type='text';n.placeholder='作った料理名';
+  const doAdd=()=>{const v=n.value.trim();if(!v)return;logAdd(calSel,addMeal,v,'manual',true);save();renderCal()};
+  add.onclick=doAdd;n.onkeydown=ev=>{if(ev.key==='Enter')doAdd()};
+  cam.onclick=()=>{photoCtx={date:calSel,meal:addMeal};$('#photo').click()};
+  f.append(sel,n,add,cam);det.append(f);
+  const b=h('button','ib','この日の食事を提案する');b.style.marginTop='10px';
+  b.onclick=()=>{slot.date=calSel;renderSlot();window.scrollTo({top:0,behavior:'smooth'})};det.append(b);el.append(det);
+}
+function readPhoto(file){return new Promise((res,rej)=>{
+  const img=new Image(),u=URL.createObjectURL(file);
+  img.onload=()=>{const k=Math.min(1,1024/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',0.8).split(',')[1])};
+  img.onerror=()=>rej(new Error('画像を読み込めませんでした'));img.src=u;
+})}
+const PHOTO_PROMPT='この写真に写っている料理の名前を日本語で答えてください。複数の料理があればすべて挙げ、一般的な料理名で簡潔に。料理が写っていなければ空の配列にしてください。JSONのみ出力：{"dishes":["料理名"]}';
+$('#photo').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f||!photoCtx)return;
+  const m=$('#calmsg'),ctx=photoCtx;m.hidden=false;m.className='hint';
+  if(!S.key){openSheet('写真の読み取りには、最初に一度だけキーの設定が必要です。');return}
+  m.textContent='写真を読み取り中…';
+  try{
+    const img=await readPhoto(f),ids=await candidates();let text='',last,ok=false;
+    for(const id of ids){
+      try{text=await callGemini(PHOTO_PROMPT,id,null,img);ok=true;S.used=id;break}
+      catch(er){last=er;if(![404,429,500,503].includes(er.status))throw er}
+    }
+    if(!ok)throw last;
+    const o=JSON.parse(text.slice(text.indexOf('{'),text.lastIndexOf('}')+1)),names=(o.dishes||[]).map(x=>String(x).trim()).filter(Boolean).slice(0,6);
+    if(!names.length)throw new Error('NONE');
+    names.forEach(n=>logAdd(ctx.date,ctx.meal,n,'photo',true));
+    save();renderCal();$('#calmsg').hidden=false;$('#calmsg').className='hint';
+    $('#calmsg').textContent='写真から追加しました：'+names.join('、')+'（違っていれば✕で消して、料理名を入力してください）';
+  }catch(er){
+    m.className='err';
+    if(er.message==='NONE'||er instanceof SyntaxError)m.textContent='料理を読み取れませんでした。料理名を入力して追加してください。';
+    else showErr(er,m);
+  }
+};
+/* ---------- レシピ帳・取り込み ---------- */
+const fmt=v=>String(Math.round(v*10)/10).replace(/\.0$/,'');
+const recipeOf=(d,servings)=>({id:nid(),name:d.name,source:d.source||'',servings:servings,minutes:d.minutes||0,tip:d.tip||'',steps:d.steps||[],
+  ingredients:(d.ingredients||[]).map(x=>({name:x.name,qty:typeof x.qty==='number'?x.qty:null,unit:x.unit||'',text:x.amount||'',category:x.category||'その他',staple:!!x.staple}))});
+const inBook=d=>S.book.some(r=>r.name===d.name&&(r.source||'')===(d.source||''));
+function saveBook(d,servings){if(inBook(d))return;S.book.unshift(recipeOf(d,servings));S.book=S.book.slice(0,100);save();renderBook()}
+function dishFromRecipe(r){
+  const k=S.people/(r.servings||S.people);
+  return{name:r.name,minutes:r.minutes,tip:r.tip,steps:r.steps,source:r.source,
+    ingredients:r.ingredients.map(i=>({name:i.name,amount:i.qty!=null?fmt(i.qty*k)+(i.unit||''):(i.text||''),qty:i.qty!=null?Math.round(i.qty*k*100)/100:null,unit:i.unit||'',category:i.category,staple:i.staple}))};
+}
+function addToShop(d){
+  d.ingredients.forEach(x=>{
+    if(!x.name)return;
+    const ex=S.shop.find(i=>!i.manual&&i.name===x.name);
+    if(ex){if(x.amount)ex.amt=ex.amt?ex.amt+' + '+x.amount:x.amount;ex.done=false}
+    else S.shop.push({id:nid(),name:x.name,amt:x.amount||'',cat:x.staple?STAPLE:(x.category||'その他'),done:false,manual:false});
+  });
+}
+function addRecipeToPlan(r){
+  const d=dishFromRecipe(r);d.date=slot.date;d.meal=slot.meal;
+  if(!S.plan)S.plan={people:S.people,dishes:[]};
+  S.plan.people=S.people;S.plan.dishes.push(d);
+  addToShop(d);logAdd(d.date,d.meal,d.name,'ai',false);save();renderRecipes();renderShop();renderCal();$('#rec').scrollIntoView({behavior:'smooth'});
+}
+function renderBook(){
+  $('#bookc').hidden=!S.book.length;const el=$('#book');el.textContent='';
+  S.book.forEach(r=>{
+    const w=h('div','bk'),t=h('div',null,r.name);t.style.fontWeight='700';
+    const meta=h('div','hint',(r.servings?r.servings+'人分':'')+(r.minutes?'・約'+r.minutes+'分':''));
+    const row=h('div','row');row.style.marginTop='6px';
+    const add=h('button','ib','献立に追加（'+S.people+'人分）');add.onclick=()=>addRecipeToPlan(r);row.append(add);
+    if(r.source){const a=h('a',null,'元のレシピ ↗');a.href=r.source;a.target='_blank';a.rel='noopener';a.style.fontSize='14px';row.append(a)}
+    const del=h('button','ib','削除');del.onclick=()=>{S.book=S.book.filter(x=>x!==r);save();renderBook()};
+    row.append(h('div','sp'),del);w.append(t,meta,row);el.append(w);
+  });
+}
+const RSHAPE='JSONのみ出力（説明文は不要）：{"name":"料理名","servings":2,"minutes":30,"tip":"コツ1文（なければ空）","steps":["手順"],"ingredients":[{"name":"食材","qty":1,"unit":"個","text":"1個","category":"野菜|肉・魚|卵・乳製品|豆腐・加工品|主食・乾物|調味料|その他","staple":false}]}。分量は元のレシピの人数分のまま、数値（qty）と単位（unit）に分け、「少々」など数値にできないものはqtyをnullにしてtextに原文を入れる。staple は醤油・塩・砂糖・油等の常備調味料のときtrue。読み取れないときは {"error":"理由"} だけを出力。';
+async function importRecipe(){
+  const v=$('#imp').value.trim(),err=$('#ierr'),ok=$('#iok'),b=$('#impgo');err.hidden=true;ok.hidden=true;
+  if(!v)return;
+  if(!S.key){openSheet('レシピの取り込みには、最初に一度だけキーの設定が必要です。');return}
+  const isUrl=/^https?:\/\/\S+$/.test(v);
+  b.disabled=true;b.textContent='読み取り中…';
+  try{
+    const prompt=(isUrl?'次のURLのレシピページを読み取り、レシピを抽出してください。URL：'+v:'次のレシピの文章から、レシピを抽出してください。\n---\n'+v.slice(0,6000)+'\n---')+'\n'+RSHAPE;
+    const ids=await candidates();let text='',last,done=false;
+    for(const id of ids){
+      try{text=await callGemini(prompt,id,isUrl?[{url_context:{}}]:null);done=true;S.used=id;break}
+      catch(e){last=e;if(e.status===401||e.status===403)throw e}
+    }
+    if(!done)throw last;
+    if(isUrl){
+      const m=lastMeta,arr=m?(m.urlMetadata||m.url_metadata||[]):[];
+      if(arr.length&&!arr.some(u=>/SUCCESS/.test(u.urlRetrievalStatus||u.url_retrieval_status||'')))throw new Error('PAGE');
+    }
+    const o=JSON.parse(text.slice(text.indexOf('{'),text.lastIndexOf('}')+1));
+    if(o.error||!o.name||!Array.isArray(o.ingredients)||!o.ingredients.length)throw new Error('PAGE');
+    const dish={name:o.name,minutes:o.minutes||0,tip:o.tip||'',steps:o.steps||[],source:isUrl?v:'',
+      ingredients:o.ingredients.map(x=>({name:x.name,amount:x.text||'',qty:typeof x.qty==='number'?x.qty:null,unit:x.unit||'',category:x.category,staple:!!x.staple}))};
+    const rec=recipeOf(dish,o.servings||S.people);
+    if(!inBook(rec))S.book.unshift(rec);
+    S.book=S.book.slice(0,100);
+    addRecipeToPlan(rec);renderBook();
+    $('#imp').value='';
+    ok.textContent=isUrl?'取り込みました（レシピ帳にも保存）。読み取りミスがないか、元のページと見比べてください。':'取り込みました（レシピ帳にも保存）。';ok.hidden=false;
+  }catch(e){
+    if(e.message==='PAGE'||e instanceof SyntaxError){err.textContent='レシピを読み取れませんでした。ページによっては読み取れません。材料と手順をコピーして、ここに貼り付けてみてください。';err.hidden=false}
+    else showErr(e,err);
+  }
+  b.disabled=false;b.textContent='取り込んで買い物リストに追加';
+}
+$('#impgo').onclick=importRecipe;
+
 
 /* ---------- 設定画面 ---------- */
 function renderModels(){
@@ -273,6 +510,6 @@ $('#test').onclick=async()=>{
 };
 $('#key').value=S.key;
 
-renderInput();renderRecipes();renderShop();renderHist();
+renderSlot();renderCal();renderInput();renderRecipes();renderShop();renderHist();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>

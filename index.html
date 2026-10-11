@@ -64,6 +64,10 @@ label.it.on span{text-decoration:line-through;color:var(--sub)}
 .bk{padding:12px 0;border-bottom:.5px solid var(--sep)}
 .hist{display:block;width:100%;text-align:left;background:transparent;color:var(--tx);border-bottom:.5px solid var(--sep);border-radius:0;font-weight:400;font-size:15px;padding:11px 0}
 a{color:var(--ac);text-decoration:none}
+.uses{display:block;color:var(--sub);font-size:12px;line-height:1.35;margin-top:1px}
+.sw{-webkit-appearance:none;appearance:none;flex:none;width:51px;height:31px;border-radius:16px;background:var(--fill);position:relative;transition:background .2s;margin:0;border:0}
+.sw::after{content:'';position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.25);transition:left .2s}
+.sw:checked{background:#34c759}.sw:checked::after{left:22px}
 .tabs{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;padding:6px 8px calc(6px + env(safe-area-inset-bottom));border-top:.5px solid var(--sep)}
 .tabs button{flex:1;background:transparent;color:var(--sub);display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:600;padding:4px 0;border-radius:12px;position:relative}
 .tabs button.on{color:var(--ac)}.tabs svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -99,12 +103,13 @@ a{color:var(--ac);text-decoration:none}
 <button class="main" id="impgo" style="margin-top:12px">取り込んで買い物リストに追加</button>
 <p class="hint">⏱ 目安 約10〜20秒</p><p class="err" id="ierr" hidden></p><p class="hint" id="iok" hidden></p></div>
 <div class="card" id="moodcard"><h2>今日の気分</h2><div class="chips" id="pmoods" style="margin-top:0"></div>
-<input type="text" id="pfree" placeholder="ほかの希望（例：魚が食べたい、豆腐が余っている）"></div>
+<input type="text" id="pfree" placeholder="ほかの希望（例：魚が食べたい、豆腐が余っている）">
+<div class="row" style="margin-top:16px"><div class="sp"><div style="font-weight:600">🔎 最新情報も参考にする</div><div class="hint" style="margin:0">Web検索で旬や話題も調べます（少し時間がかかります）</div></div><input type="checkbox" class="sw" id="web"></div></div>
 <p class="est" id="est"></p>
 <button class="main" id="pgo">候補を出す</button>
 <button class="main" id="go" hidden>レシピと買い物リストを作る</button>
 <p class="err" id="err" hidden></p><p class="err" id="perr" hidden></p>
-<div id="cands" style="margin-top:18px"></div><div id="rec"></div>
+<div id="cands" style="margin-top:18px"></div><div id="webinfo"></div><div id="rec"></div>
 </section>
 <section id="t-shop" hidden><h1>買い物</h1><div id="shop"></div></section>
 <section id="t-log" hidden><h1>記録</h1>
@@ -151,19 +156,25 @@ a{color:var(--ac);text-decoration:none}
 const $=s=>document.querySelector(s);
 const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const STAPLE='常備品（家にあるか確認）',MANUAL='自分で追加';
-const DEF={people:2,dishes:[],plan:null,key:'',model:'auto',list:[],shop:[],book:[],log:[],opt:{days:1,meals:['dinner'],moods:[],free:''},cands:null,used:'',history:[],v4:true,v5:false,v6:false};
+const DEF={people:2,dishes:[],plan:null,key:'',model:'auto',list:[],shop:[],book:[],log:[],opt:{days:1,meals:['dinner'],moods:[],free:'',web:false},cands:null,used:'',history:[],v4:true,v5:false,v6:false};
 let S=JSON.parse(JSON.stringify(DEF)),editId=null,focusAdd=false,uid=0;
 const nid=()=>Date.now().toString(36)+(uid++);
 const save=()=>{try{localStorage.setItem('kondate2',JSON.stringify(S))}catch(e){}};
 
+function usesOf(i){
+  if(i.uses&&i.uses.length)return i.uses;
+  if(i.manual||!S.plan)return[];
+  const r=[];(S.plan.dishes||[]).forEach(d=>(d.ingredients||[]).forEach(x=>{if(x.name===i.name)r.push({dish:d.name,amount:x.amount||''})}));
+  return r;
+}
 function shopFrom(plan,checked){
   const m=new Map();
   (plan.dishes||[]).forEach(d=>(d.ingredients||[]).forEach(x=>{
     if(!x.name)return;
-    if(!m.has(x.name))m.set(x.name,{name:x.name,amt:[],cat:x.staple?STAPLE:(x.category||'その他'),done:!!(checked&&checked[x.name])});
-    m.get(x.name).amt.push(x.amount);
+    if(!m.has(x.name))m.set(x.name,{name:x.name,amt:[],uses:[],cat:x.staple?STAPLE:(x.category||'その他'),done:!!(checked&&checked[x.name])});
+    const v=m.get(x.name);v.amt.push(x.amount);v.uses.push({dish:d.name,amount:x.amount||''});
   }));
-  return[...m.values()].map(v=>({id:nid(),name:v.name,amt:v.amt.filter(Boolean).join(' + '),cat:v.cat,done:v.done,manual:false}));
+  return[...m.values()].map(v=>({id:nid(),name:v.name,amt:v.amt.filter(Boolean).join(' + '),uses:v.uses,cat:v.cat,done:v.done,manual:false}));
 }
 function applyPlan(plan,mode){
   if(mode==='one'||mode==='day')plan.dishes.forEach(d=>{d.date=slot.date;d.meal=(mode==='day'&&MEALS[d.meal])?d.meal:slot.meal});
@@ -241,8 +252,11 @@ const rank=c=>c===MANUAL?0:c===STAPLE?2:1;
 function itemRow(i){
   const l=h('label','it'+(i.done?' on':'')),cb=h('input');cb.type='checkbox';cb.checked=i.done;
   cb.onchange=()=>{i.done=cb.checked;save();renderShop()};
+  const mid=h('div','sp');mid.style.minWidth='0';mid.append(h('span',null,i.name));
+  const u=usesOf(i);
+  if(u.length)mid.append(h('small','uses',u.map(x=>x.dish+(x.amount?' '+x.amount:'')).join('・')));
   const ed=h('button','ib','✎');ed.onclick=e=>{e.preventDefault();editId=i.id;renderShop()};
-  l.append(cb,h('span',null,i.name),h('span','amt',i.amt),ed);return l;
+  l.append(cb,mid,h('span','amt',i.amt),ed);return l;
 }
 function editRow(i){
   const w=h('div','ed'),n=h('input'),a=h('input');
@@ -343,8 +357,8 @@ async function modelsFor(o){
   return(o.heavy?std.concat(lite):lite.concat(std)).slice(0,4);
 }
 const tierOf=heavy=>S.model==='auto'?(heavy?'std':'lite'):(/lite/.test(S.model)?'lite':'std');
-const estSec=(exp,heavy)=>Math.round(3+exp*0.9/SPD[tierOf(heavy)]);
-function estText(exp,heavy){const e=estSec(exp,heavy),a=Math.max(5,Math.round(e*.8/5)*5),b=Math.max(a+5,Math.round(e*1.5/5)*5);return'約'+a+'〜'+b+'秒'}
+const estSec=(exp,heavy,extra)=>Math.round(3+(extra||0)+exp*0.9/SPD[tierOf(heavy)]);
+function estText(exp,heavy,extra){const e=estSec(exp,heavy,extra),a=Math.max(5,Math.round(e*.8/5)*5),b=Math.max(a+5,Math.round(e*1.5/5)*5);return'約'+a+'〜'+b+'秒'}
 let prog=null;
 function setBar(f){$('#pbar').style.width=Math.round(f*100)+'%'}
 function tick(){
@@ -359,10 +373,10 @@ function progStart(o){
 function progEnd(){if(prog){clearInterval(prog.iv);prog=null}$('#prog').hidden=true}
 $('#pcancel').onclick=()=>{if(prog)prog.ctl.abort()};
 async function runAI(o){
-  const ids=await modelsFor(o),p=progStart({title:o.title,est:estSec(o.exp,o.heavy)});let last;
+  const ids=await modelsFor(o),p=progStart({title:o.title,est:estSec(o.exp,o.heavy,o.web?10:0)});let last;
   try{
     for(const id of ids){
-      $('#pst').textContent='AIに依頼中…（'+mlabel(id)+'）';
+      $('#pst').textContent=(o.web?'Web検索を使って考え中…（':'AIに依頼中…（')+mlabel(id)+'）';
       try{
         const t=await callGemini(o.prompt,id,o.tools,o.img,{signal:p.ctl.signal,onChunk:n=>{const f=Math.min(.95,n/o.exp);p.real=true;setBar(f);$('#pst').textContent='回答を受信中… '+Math.round(f*100)+'%（'+mlabel(id)+'）'}});
         S.used=id;$('#pst').textContent='整理中…';setBar(1);return t;
@@ -402,7 +416,9 @@ async function generate(){
   if(!S.key){openSheet('レシピの作成には、最初に一度だけキーの設定が必要です。');return}
   try{
     const n=S.dishes.length||(slot.meal==='dinner'?3:2);
-    const plan=parse(await runAI({title:MEALS[slot.meal].n+'のレシピを作成',prompt:buildPrompt('one'),exp:n*430+100,heavy:true}));
+    const web=!!S.opt.web&&!S.dishes.length;
+    const r=await askWeb({title:MEALS[slot.meal].n+'のレシピを作成',prompt:buildPrompt('one')+(web?webText(slot.date):''),exp:n*430+100,heavy:true},web);
+    S.web=r.info;renderWeb();const plan=parse(r.text);
     plan.people=S.people;applyPlan(plan,'one');
     S.history.unshift({t:Date.now(),people:S.people,plan:{dishes:plan.dishes}});S.history=S.history.slice(0,10);
     save();renderRecipes();renderShop();renderHist();renderCal();
@@ -519,8 +535,11 @@ function addToShop(d){
   d.ingredients.forEach(x=>{
     if(!x.name)return;
     const ex=S.shop.find(i=>!i.manual&&i.name===x.name);
-    if(ex){if(x.amount)ex.amt=ex.amt?ex.amt+' + '+x.amount:x.amount;ex.done=false}
-    else S.shop.push({id:nid(),name:x.name,amt:x.amount||'',cat:x.staple?STAPLE:(x.category||'その他'),done:false,manual:false});
+    if(ex){
+      if(!ex.uses)ex.uses=usesOf(ex).filter(u=>u.dish!==d.name);
+      ex.uses.push({dish:d.name,amount:x.amount||''});
+      if(x.amount)ex.amt=ex.amt?ex.amt+' + '+x.amount:x.amount;ex.done=false;
+    }else S.shop.push({id:nid(),name:x.name,amt:x.amount||'',uses:[{dish:d.name,amount:x.amount||''}],cat:x.staple?STAPLE:(x.category||'その他'),done:false,manual:false});
   });
 }
 function addRecipeToPlan(r){
@@ -596,6 +615,31 @@ $('#test').onclick=async()=>{
 };
 $('#key').value=S.key;
 
+/* ---------- Web検索（Google検索によるグラウンディング） ---------- */
+const webText=ds=>{const mo=new Date(ds+'T00:00:00').getMonth()+1;return'\nさらにWeb検索で、'+mo+'月の旬の食材や、最近人気・話題の家庭向けレシピ、近い時期の行事食を調べ、その内容を踏まえてください。検索で確認できないことを「人気」「話題」などと断定しないでください。最終出力は指定のJSONのみ。'};
+function groundInfo(){
+  const g=lastGround;if(!g)return null;
+  const src=(g.groundingChunks||g.grounding_chunks||[]).map(c=>c.web||{}).filter(w=>w.uri).slice(0,6).map(w=>({t:w.title||w.uri,u:w.uri}));
+  const ent=g.searchEntryPoint||g.search_entry_point||{};
+  return{src,html:ent.renderedContent||ent.rendered_content||'',q:(g.webSearchQueries||g.web_search_queries||[]).slice(0,4)};
+}
+async function askWeb(o,web){
+  if(web){
+    try{const t=await runAI(Object.assign({},o,{tools:[{google_search:{}}],web:true}));return{text:t,info:groundInfo()||{src:[],html:'',q:[]}}}
+    catch(e){if(e.name==='AbortError'||![400,403,404,429,500,503].includes(e.status))throw e;toast('Web検索が使えなかったため、通常の提案に切り替えました')}
+  }
+  return{text:await runAI(Object.assign({},o,{tools:null,web:false})),info:null};
+}
+function renderWeb(){
+  const o=$('#webinfo');o.textContent='';const W=S.web;if(!W)return;
+  const c=h('section','card');c.append(h('h2',null,'🔎 Web検索の参考'));
+  if(W.q&&W.q.length)c.append(h('p','hint','検索：'+W.q.join('、')));
+  (W.src||[]).forEach(x=>{const a=h('a',null,x.t);a.href=x.u;a.target='_blank';a.rel='noopener';a.style.cssText='display:block;font-size:14px;padding:4px 0';c.append(a)});
+  if(!(W.src||[]).length)c.append(h('p','hint','参考サイトの情報は返ってきませんでした（検索せずに答えた可能性があります）。'));
+  if(W.html){const f=document.createElement('iframe');f.setAttribute('sandbox','allow-popups allow-popups-to-escape-sandbox');f.srcdoc=W.html;f.title='Google検索の候補';f.style.cssText='width:100%;height:72px;border:0;margin-top:8px;background:transparent';c.append(f)}
+  c.append(h('p','hint','検索結果は参考情報です。内容が正確とは限りません。'));
+  o.append(c);
+}
 /* ---------- 献立の提案（候補→組み合わせ） ---------- */
 const MOODS=['和食','洋食','中華','エスニック','あっさり','がっつり','甘いもの','しょっぱいもの','辛いもの','ヘルシー','手軽に'];
 const addDays=(ds,n)=>{const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return ymd(d)};
@@ -617,11 +661,12 @@ function renderProp(){
     const c=h('span','chip q'+(S.opt.moods.includes(x)?' on':''),x);
     c.onclick=()=>{S.opt.moods=S.opt.moods.includes(x)?S.opt.moods.filter(v=>v!==x):S.opt.moods.concat(x);save();renderProp()};mo.append(c);
   });
-  $('#pfree').value=S.opt.free;updateEst();
+  $('#pfree').value=S.opt.free;$('#web').checked=!!S.opt.web;updateEst();
 }
 $('#pdate').onchange=e=>{if(e.target.value)pstart=e.target.value};
 $('#pdays').onchange=e=>{S.opt.days=+e.target.value;save();updateEst()};
 $('#pfree').oninput=e=>{S.opt.free=e.target.value;save()};
+$('#web').onchange=e=>{S.opt.web=e.target.checked;save();updateEst()};
 
 async function proposeCands(){
   const err=$('#perr');err.hidden=true;if(prog)return;
@@ -637,7 +682,9 @@ async function proposeCands(){
       +'条件：朝食は手早く（15分程度）作れる軽めのもの、昼食は一品で満足できるもの、夕食は主菜・副菜・汁物などを組み合わせられる候補。各枠の候補数は朝食4・昼食5・夕食6。種類(kind)は 主食/主菜/副菜/汁物/デザート から選び、候補の種類を混ぜる。気分に合う料理を中心にしつつ、全体が偏りすぎないようにする。同じ料理や同じ主材料が続きすぎないようにし、同じ料理を複数の枠に出さない。'
       +(av.length?'過去に作った次の料理は避ける：'+av.join('、')+'。':'')
       +(new Date(slots[0].date+'T00:00:00').getMonth()+1)+'月の旬の食材も取り入れる。\nJSONのみ出力：{"slots":[{"date":"'+slots[0].date+'","meal":"'+slots[0].meal+'","items":[{"name":"料理名","kind":"主菜","desc":"一言（20字以内）"}]}]}';
-    const t=await runAI({title:'献立の候補を作成',prompt:p,exp:slots.length*250+100,heavy:slots.length>6});
+    const web=!!S.opt.web;
+    const r=await askWeb({title:'献立の候補を作成',prompt:p+(web?webText(slots[0].date):''),exp:slots.length*250+100,heavy:slots.length>6||web},web);
+    const t=r.text;S.web=r.info;
     const o=JSON.parse(t.slice(t.indexOf('{'),t.lastIndexOf('}')+1)),raw=o.slots||[];
     const out=slots.map((sl,i)=>{
       const r=raw.find(x=>x.date===sl.date&&x.meal===sl.meal)||(raw.length===slots.length?raw[i]:null);
@@ -645,7 +692,7 @@ async function proposeCands(){
       return{date:sl.date,meal:sl.meal,items};
     }).filter(sl=>sl.items.length);
     if(!out.length)throw new Error('候補を読み取れませんでした。');
-    S.cands={slots:out};save();renderCands();$('#cands').scrollIntoView({behavior:'smooth'});
+    S.cands={slots:out};save();renderCands();renderWeb();$('#cands').scrollIntoView({behavior:'smooth'});
   }catch(e){showErr(e,err)}
 }
 $('#pgo').onclick=proposeCands;
@@ -714,8 +761,8 @@ function setMode(m){
 document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>setMode(b.dataset.md));
 function updateEst(){
   let t='';
-  if(mode==='prop'){const n=S.opt.days*Math.max(1,S.opt.meals.length);t='候補づくり '+estText(n*250+100,n>6)+'（'+n+'食分）'}
-  else if(mode==='one'){const n=S.dishes.length||(slot.meal==='dinner'?3:2);t='レシピ作成 '+estText(n*430+100,true)+'（'+n+'品）'}
+  if(mode==='prop'){const n=S.opt.days*Math.max(1,S.opt.meals.length);t='候補づくり '+estText(n*250+100,n>6||S.opt.web,S.opt.web?10:0)+'（'+n+'食分）'+(S.opt.web?'・Web検索あり':'')}
+  else if(mode==='one'){const n=S.dishes.length||(slot.meal==='dinner'?3:2);const w=S.opt.web&&!S.dishes.length;t='レシピ作成 '+estText(n*430+100,true,w?10:0)+'（'+n+'品）'+(w?'・Web検索あり':'')}
   $('#est').textContent=t?'⏱ 目安 '+t:'';
 }
 let toastT;
@@ -726,9 +773,10 @@ function toast(msg,label,fn){
 }
 const HELP=[
  ['献立を決めたい','「献立」タブ →「まとめて提案」。日数と食事、今日の気分を選んで「候補を出す」。出てきた候補をタップして選び、「選んだ◯品のレシピと買い物リストを作る」を押します。'],
+ ['最新の情報も参考にしたい','「献立」タブの「今日の気分」にあるスイッチをオンにすると、Web検索で旬や話題の情報も調べて提案します。時間が少し長くなり、無料枠には回数の上限があります。'],
  ['1食だけすぐ作りたい','「献立」タブ →「1食だけ」。食べたい料理名を入れる（空欄ならお任せ）と、その食事のレシピと買い物リストができます。'],
  ['CookpadなどのレシピをURLで取り込みたい','「献立」タブ →「取り込み」。レシピのURL、または材料・手順をコピーして貼り付けます。人数分に換算して買い物リストに入り、レシピ帳にも保存されます。'],
- ['買い物リストを直したい・足したい','「買い物」タブ。✎で名前や量を直したり削除できます。一番下の欄から、自分の買い物も追加できます。買い終えたらチェック。'],
+ ['買い物リストを直したい・足したい','「買い物」タブ。各食材の下に、使う料理と量が出ます。✎で名前や量を直したり削除できます。一番下の欄から、自分の買い物も追加できます。買い終えたらチェック。'],
  ['作った料理を記録したい','「記録」タブで日付を押し、作った料理にチェックを入れます。AIを使わずに作った料理は、同じ画面の下の欄から、料理名の入力や📷写真で追加できます。'],
  ['過去に作った料理を見たい','「記録」タブのカレンダー。マークが濃い日は、作った料理がある日です。日付を押すと中身が見られます。'],
  ['AIが遅い・動かない','作業の前に「目安」の時間、作業中は進捗バーが出ます。「やめる」で中止もできます。エラーが続くときは、⚙️で接続テストをしてください。'],
@@ -753,7 +801,7 @@ $('#tskip').onclick=closeTut;
 $('#htut').onclick=()=>{$('#help').hidden=true;openTut()};
 $('#wgo').onclick=openTut;$('#wno').onclick=closeTut;
 
-renderProp();renderCands();renderSlot();renderCal();renderInput();renderRecipes();renderShop();renderHist();
+renderProp();renderCands();renderWeb();renderSlot();renderCal();renderInput();renderRecipes();renderShop();renderHist();
 setMode('prop');showTab('plan');$('#welcome').hidden=!!S.seenTut;
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>

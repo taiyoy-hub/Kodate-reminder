@@ -1,1 +1,1 @@
-{"name":"こんだてメモ","short_name":"こんだて","start_url":"./","scope":"./","display":"standalone","background_color":"#faf7f2","theme_color":"#e8742c","icons":[{"src":"icon-180.png","sizes":"180x180","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}
+{"name":"献立おたすけ君","short_name":"献立おたすけ君","start_url":"./","scope":"./","display":"standalone","background_color":"#f2f2f7","theme_color":"#f2f2f7","icons":[{"src":"icon-180.png","sizes":"180x180","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}
